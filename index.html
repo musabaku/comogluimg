@@ -151,16 +151,11 @@
 
                 const productsByBrand = groupProducts(parsedData);
                 
-                // Listen for real-time updates from Firestore and build the UI
-                const completedItemsRef = collection(db, DB_COLLECTION_NAME);
-                onSnapshot(completedItemsRef, (snapshot) => {
-                    const completedItems = new Set();
-                    snapshot.docs.forEach(doc => completedItems.add(doc.id));
-                    createBrandAccordions(productsByBrand, completedItems);
-                }, (error) => {
-                    console.error("Firestore snapshot error: ", error);
-                    showError("Could not connect to the database to get completion status. Check your Firestore rules and configuration.");
-                });
+                // Build the initial UI structure once
+                createBrandAccordions(productsByBrand);
+                
+                // Then, listen for real-time updates to style the elements
+                listenForUpdates();
                 
                 loadingState.classList.add('hidden');
                 accordionContainer.classList.remove('hidden');
@@ -191,8 +186,11 @@
             window.open(googleImagesUrl, '_blank');
         }
 
-        function createBrandAccordions(productsByBrand, completedItems) {
-            brandAccordions.innerHTML = ''; // Clear existing accordions before redrawing
+        /**
+         * Builds the static HTML structure for the accordions one time.
+         */
+        function createBrandAccordions(productsByBrand) {
+            brandAccordions.innerHTML = ''; // Clear existing accordions
             const brands = Object.keys(productsByBrand).sort();
 
             if (brands.length === 0) {
@@ -219,30 +217,30 @@
                 productList.className = 'space-y-2 mb-4';
                 
                 products.forEach(productName => {
+                    // Use a sanitized ID for DOM elements
                     const uniqueId = `${brand}|${productName}`;
+                    const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
+
                     const li = document.createElement('li');
                     li.className = 'flex items-center justify-between';
 
                     const productLink = document.createElement('a');
+                    productLink.id = `link-${elementId}`;
                     productLink.href = '#';
                     productLink.textContent = productName;
                     productLink.className = 'text-blue-600 hover:underline hover:text-blue-800 flex-grow';
                     productLink.onclick = (e) => { e.preventDefault(); openSearchTab(brand, productName); };
 
                     const completeButton = document.createElement('button');
+                    completeButton.id = `button-${elementId}`;
                     completeButton.innerHTML = '✓';
-                    completeButton.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200';
+                    completeButton.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-gray-200 text-gray-600 border-gray-300';
                     
-                    if (completedItems.has(uniqueId)) {
-                        productLink.classList.add('completed');
-                        completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
-                    } else {
-                        completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
-                    }
-
                     completeButton.onclick = async () => {
                         const itemRef = doc(db, DB_COLLECTION_NAME, uniqueId);
-                        if (completedItems.has(uniqueId)) {
+                        // Check current state by looking at the class, not a separate variable
+                        const isCompleted = productLink.classList.contains('completed');
+                        if (isCompleted) {
                             await deleteDoc(itemRef);
                         } else {
                             await setDoc(itemRef, { completedAt: new Date() });
@@ -274,6 +272,36 @@
                         content.style.maxHeight = null;
                     } else {
                         content.style.maxHeight = content.scrollHeight + "px";
+                    }
+                });
+            });
+        }
+
+        /**
+         * Listens for real-time DB changes and updates the style of individual items
+         * without redrawing the entire UI.
+         */
+        function listenForUpdates() {
+            const completedItemsRef = collection(db, DB_COLLECTION_NAME);
+            onSnapshot(completedItemsRef, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const uniqueId = change.doc.id;
+                    const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
+                    const productLink = document.getElementById(`link-${elementId}`);
+                    const completeButton = document.getElementById(`button-${elementId}`);
+
+                    if (!productLink || !completeButton) return; // Skip if element not found
+
+                    if (change.type === "added") {
+                        // Mark as completed
+                        productLink.classList.add('completed');
+                        completeButton.classList.remove('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                    } else if (change.type === "removed") {
+                        // Mark as not completed
+                        productLink.classList.remove('completed');
+                        completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        completeButton.classList.remove('bg-green-500', 'text-white', 'border-green-500');
                     }
                 });
             });
