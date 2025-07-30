@@ -19,6 +19,11 @@
             overflow: hidden;
             transition: max-height 0.3s ease-out;
         }
+        /* Style for completed items */
+        .completed {
+            text-decoration: line-through;
+            color: #9ca3af; /* Tailwind's gray-400 */
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -51,7 +56,7 @@
                  <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
                     <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
-                        <li>Click a brand name to expand its product list.</li>
+                        <li>Click the checkmark (✓) to mark a product as "done". Your progress is saved automatically.</li>
                         <li>Click an individual product name to open one image search tab.</li>
                         <li>Click the "Search All" button to open tabs for every product in that list.</li>
                     </ul>
@@ -68,13 +73,33 @@
     <script>
         // --- CONFIGURATION ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?output=csv';
-        
+        const STORAGE_KEY = 'brandImageTool_doneItems';
+
         // --- DOM ELEMENTS ---
         const loadingState = document.getElementById('loading-state');
         const errorMessage = document.getElementById('error-message');
         const errorText = document.getElementById('error-text');
         const accordionContainer = document.getElementById('accordion-container');
         const brandAccordions = document.getElementById('brand-accordions');
+
+        // --- PERSISTENCE LOGIC ---
+        
+        /**
+         * Retrieves the set of completed items from localStorage.
+         * @returns {Set<string>} A set of unique identifiers for completed items.
+         */
+        function getCompletedItems() {
+            const storedItems = localStorage.getItem(STORAGE_KEY);
+            return storedItems ? new Set(JSON.parse(storedItems)) : new Set();
+        }
+
+        /**
+         * Saves the set of completed items to localStorage.
+         * @param {Set<string>} completedItemsSet - The set of completed items to save.
+         */
+        function saveCompletedItems(completedItemsSet) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(completedItemsSet)));
+        }
 
         // --- CORE LOGIC ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -153,11 +178,8 @@
 
         /**
          * Opens a Google Images search tab for a given query.
-         * @param {string} brand - The brand name.
-         * @param {string} productName - The product name.
          */
         function openSearchTab(brand, productName) {
-            // *** CHANGE HERE: Combine brand and product name for the search query ***
             const fullQuery = `${brand} ${productName}`;
             const searchQuery = encodeURIComponent(fullQuery);
             const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${searchQuery}`;
@@ -166,10 +188,10 @@
 
         /**
          * Creates and appends an accordion for each brand to the DOM.
-         * @param {Object} productsByBrand - The object containing products grouped by brand.
          */
         function createBrandAccordions(productsByBrand) {
             const brands = Object.keys(productsByBrand).sort();
+            const completedItems = getCompletedItems();
 
             if (brands.length === 0) {
                  errorText.textContent = "No valid 'Brand' and 'Name' columns found, or the sheet is empty.";
@@ -182,7 +204,6 @@
                 const accordionItem = document.createElement('div');
                 accordionItem.className = "border border-gray-200 rounded-lg";
 
-                // Create the button to toggle the accordion
                 const button = document.createElement('button');
                 button.className = "w-full flex justify-between items-center text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200";
                 button.innerHTML = `
@@ -190,41 +211,67 @@
                     <svg class="w-6 h-6 transform transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 `;
                 
-                // Create the content panel
                 const content = document.createElement('div');
                 content.className = "accordion-content bg-white";
                 
                 const contentWrapper = document.createElement('div');
                 contentWrapper.className = 'p-4 border-t border-gray-200';
 
-                // Create product list
                 const productList = document.createElement('ul');
                 productList.className = 'space-y-2 mb-4';
+                
                 products.forEach(productName => {
+                    const uniqueId = `${brand}|${productName}`;
+                    
                     const li = document.createElement('li');
+                    li.className = 'flex items-center justify-between';
+
                     const productLink = document.createElement('a');
                     productLink.href = '#';
                     productLink.textContent = productName;
-                    productLink.className = 'text-blue-600 hover:underline hover:text-blue-800';
+                    productLink.className = 'text-blue-600 hover:underline hover:text-blue-800 flex-grow';
                     productLink.onclick = (e) => {
                         e.preventDefault();
-                        // *** CHANGE HERE: Pass both the brand and product name ***
                         openSearchTab(brand, productName);
                     };
+
+                    const completeButton = document.createElement('button');
+                    completeButton.innerHTML = '✓';
+                    completeButton.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200';
+                    
+                    // Apply initial state (completed or not)
+                    if (completedItems.has(uniqueId)) {
+                        productLink.classList.add('completed');
+                        completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                    } else {
+                        completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                    }
+
+                    completeButton.onclick = () => {
+                        if (completedItems.has(uniqueId)) {
+                            completedItems.delete(uniqueId);
+                            productLink.classList.remove('completed');
+                            completeButton.classList.remove('bg-green-500', 'text-white', 'border-green-500');
+                            completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        } else {
+                            completedItems.add(uniqueId);
+                            productLink.classList.add('completed');
+                            completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                            completeButton.classList.remove('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        }
+                        saveCompletedItems(completedItems);
+                    };
+
                     li.appendChild(productLink);
+                    li.appendChild(completeButton);
                     productList.appendChild(li);
                 });
 
-                // Create "Search All" button
                 const searchAllButton = document.createElement('button');
                 searchAllButton.textContent = `Search All ${products.length} Products`;
                 searchAllButton.className = "w-full mt-4 p-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200";
                 searchAllButton.onclick = () => {
-                    console.log(`Searching for ${products.length} products from brand: ${brand}`);
-                    products.forEach(productName => {
-                        // *** CHANGE HERE: Pass both the brand and product name ***
-                        openSearchTab(brand, productName);
-                    });
+                    products.forEach(productName => openSearchTab(brand, productName));
                 };
 
                 contentWrapper.appendChild(productList);
@@ -235,7 +282,6 @@
                 accordionItem.appendChild(content);
                 brandAccordions.appendChild(accordionItem);
 
-                // Add event listener for the accordion toggle
                 button.addEventListener('click', () => {
                     const isActive = content.style.maxHeight;
                     button.querySelector('svg').classList.toggle('rotate-180');
