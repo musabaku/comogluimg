@@ -162,11 +162,12 @@
                 console.log("--- Debugging Sheet Data ---");
                 parsedData.forEach((row, index) => {
                     const brand = row.Brand ? row.Brand.trim() : '';
-                    // *** DEBUGGING LOGIC ***
+                    // *** FIX: Stricter check to filter out invalid brand rows ***
                     if (!brand || brand.toLowerCase() === 'brand') {
-                        console.warn(`Row ${index + 2} has a missing or invalid brand name. Data:`, row);
+                        console.warn(`Row ${index + 2} has a missing or invalid brand name. SKIPPING. Data:`, row);
+                        return; // Skip this row entirely
                     }
-                    if (brand && !seenBrands.has(brand)) {
+                    if (!seenBrands.has(brand)) {
                         orderedBrands.push(brand);
                         seenBrands.add(brand);
                     }
@@ -188,13 +189,17 @@
         function groupProducts(data) {
             const grouped = {};
             data.forEach(row => {
-                const brand = row.Brand ? row.Brand.trim() : 'Unnamed Brand';
+                // *** FIX: Ensure we don't group items under an invalid brand name ***
+                const brand = row.Brand ? row.Brand.trim() : '';
                 const name = row.Name ? row.Name.trim() : null;
-                if (brand && name) {
+                if (brand && name && brand.toLowerCase() !== 'brand') {
                     if (!grouped[brand]) grouped[brand] = [];
                     grouped[brand].push(name);
                 }
             });
+            // Clean up any "Unnamed Brand" that might have slipped through, though the primary filter should prevent it.
+            delete grouped['Unnamed Brand'];
+            delete grouped[''];
             return grouped;
         }
 
@@ -216,11 +221,13 @@
 
             brands.forEach(brand => {
                 const products = productsByBrand[brand] || [];
+                // *** FIX: Don't create an accordion if there are no products for a brand ***
+                if (products.length === 0) return;
+
                 const accordionItem = document.createElement('div');
                 const brandId = brand.replace(/[^a-zA-Z0-9]/g, '-');
                 accordionItem.className = "border border-gray-200 rounded-lg overflow-hidden";
 
-                // Main button now has a progress bar background
                 const button = document.createElement('button');
                 button.className = "w-full text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none transition-colors duration-200";
                 button.innerHTML = `
@@ -289,7 +296,6 @@
             onSnapshot(completedItemsRef, (snapshot) => {
                 const completedCountByBrand = {};
                 
-                // First, reset all styles and counts
                 for (const brand in productsByBrand) {
                     completedCountByBrand[brand] = 0;
                     productsByBrand[brand].forEach(productName => {
@@ -304,13 +310,11 @@
                     });
                 }
 
-                // Count completed items from the snapshot
                 snapshot.docs.forEach(doc => {
                     const brand = doc.data().brand;
                     if (brand && completedCountByBrand.hasOwnProperty(brand)) {
                         completedCountByBrand[brand]++;
                     }
-                    // Style the individual completed item
                     const uniqueId = doc.id;
                     const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
                     const link = document.getElementById(`link-${elementId}`);
@@ -321,7 +325,6 @@
                     }
                 });
 
-                // Update progress bars and counts for all brands
                 for (const brand in productsByBrand) {
                     const brandId = brand.replace(/[^a-zA-Z0-9]/g, '-');
                     const total = productsByBrand[brand].length;
