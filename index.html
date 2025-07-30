@@ -22,6 +22,11 @@
             text-decoration: line-through;
             color: #9ca3af; /* Tailwind's gray-400 */
         }
+        /* Style for the progress bar on the accordion button */
+        .progress-bar-bg {
+            background-color: #e5e7eb; /* gray-200 */
+            transition: background 0.4s ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -55,6 +60,7 @@
                     <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
                     <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
                         <li>Click the checkmark (✓) to mark a product as "done". Your progress is saved for everyone in real-time.</li>
+                        <li>The progress bar on each brand shows the completion percentage.</li>
                         <li>Click an individual product name to open one image search tab.</li>
                     </ul>
                     <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might block multiple tabs. If it does, please "Allow pop-ups" for this page.</p>
@@ -78,7 +84,7 @@
         const DB_COLLECTION_NAME = 'completedProducts';
 
         // =================================================================================
-        // Your Firebase configuration has been added here.
+        // Your Firebase configuration.
         // =================================================================================
         const firebaseConfig = {
             apiKey: "AIzaSyDjl2QFyRWoN_SjbRKTuhxp9ksgm-5MBTw",
@@ -151,11 +157,24 @@
 
                 const productsByBrand = groupProducts(parsedData);
                 
-                // Build the initial UI structure once
-                createBrandAccordions(productsByBrand);
-                
-                // Then, listen for real-time updates to style the elements
-                listenForUpdates();
+                const orderedBrands = [];
+                const seenBrands = new Set();
+                console.log("--- Debugging Sheet Data ---");
+                parsedData.forEach((row, index) => {
+                    const brand = row.Brand ? row.Brand.trim() : '';
+                    // *** DEBUGGING LOGIC ***
+                    if (!brand || brand.toLowerCase() === 'brand') {
+                        console.warn(`Row ${index + 2} has a missing or invalid brand name. Data:`, row);
+                    }
+                    if (brand && !seenBrands.has(brand)) {
+                        orderedBrands.push(brand);
+                        seenBrands.add(brand);
+                    }
+                });
+                 console.log("--- End Debugging ---");
+
+                createBrandAccordions(productsByBrand, orderedBrands);
+                listenForUpdates(productsByBrand);
                 
                 loadingState.classList.add('hidden');
                 accordionContainer.classList.remove('hidden');
@@ -186,12 +205,9 @@
             window.open(googleImagesUrl, '_blank');
         }
 
-        /**
-         * Builds the static HTML structure for the accordions one time.
-         */
-        function createBrandAccordions(productsByBrand) {
-            brandAccordions.innerHTML = ''; // Clear existing accordions
-            const brands = Object.keys(productsByBrand).sort();
+        function createBrandAccordions(productsByBrand, orderedBrands) {
+            brandAccordions.innerHTML = '';
+            const brands = orderedBrands;
 
             if (brands.length === 0) {
                  showError("No valid 'Brand' and 'Name' columns found, or the sheet is empty.");
@@ -199,13 +215,25 @@
             }
 
             brands.forEach(brand => {
-                const products = productsByBrand[brand];
+                const products = productsByBrand[brand] || [];
                 const accordionItem = document.createElement('div');
-                accordionItem.className = "border border-gray-200 rounded-lg";
+                const brandId = brand.replace(/[^a-zA-Z0-9]/g, '-');
+                accordionItem.className = "border border-gray-200 rounded-lg overflow-hidden";
 
+                // Main button now has a progress bar background
                 const button = document.createElement('button');
-                button.className = "w-full flex justify-between items-center text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200";
-                button.innerHTML = `<span class="font-semibold text-lg text-gray-800">${brand}</span><svg class="w-6 h-6 transform transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+                button.className = "w-full text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none transition-colors duration-200";
+                button.innerHTML = `
+                    <div id="progress-${brandId}" class="progress-bar-bg rounded-lg -m-4 p-4">
+                        <div class="flex justify-between items-center">
+                            <span class="font-semibold text-lg text-gray-800">${brand}</span>
+                            <div class="flex items-center">
+                                <span id="count-${brandId}" class="text-sm font-medium text-gray-600 mr-3">0 / ${products.length}</span>
+                                <svg class="w-6 h-6 transform transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </div>
+                        </div>
+                    </div>
+                `;
                 
                 const content = document.createElement('div');
                 content.className = "accordion-content bg-white";
@@ -217,58 +245,37 @@
                 productList.className = 'space-y-2 mb-4';
                 
                 products.forEach(productName => {
-                    // Use a sanitized ID for DOM elements
                     const uniqueId = `${brand}|${productName}`;
                     const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
-
                     const li = document.createElement('li');
                     li.className = 'flex items-center justify-between';
-
-                    const productLink = document.createElement('a');
-                    productLink.id = `link-${elementId}`;
-                    productLink.href = '#';
-                    productLink.textContent = productName;
-                    productLink.className = 'text-blue-600 hover:underline hover:text-blue-800 flex-grow';
-                    productLink.onclick = (e) => { e.preventDefault(); openSearchTab(brand, productName); };
-
-                    const completeButton = document.createElement('button');
-                    completeButton.id = `button-${elementId}`;
-                    completeButton.innerHTML = '✓';
-                    completeButton.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-gray-200 text-gray-600 border-gray-300';
+                    li.innerHTML = `
+                        <a href="#" id="link-${elementId}" class="text-blue-600 hover:underline hover:text-blue-800 flex-grow">${productName}</a>
+                        <button id="button-${elementId}" class="ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-gray-200 text-gray-600 border-gray-300">✓</button>
+                    `;
                     
-                    completeButton.onclick = async () => {
+                    li.querySelector(`#link-${elementId}`).onclick = (e) => { e.preventDefault(); openSearchTab(brand, productName); };
+                    li.querySelector(`#button-${elementId}`).onclick = async () => {
                         const itemRef = doc(db, DB_COLLECTION_NAME, uniqueId);
-                        // Check current state by looking at the class, not a separate variable
-                        const isCompleted = productLink.classList.contains('completed');
+                        const isCompleted = li.querySelector('a').classList.contains('completed');
                         if (isCompleted) {
                             await deleteDoc(itemRef);
                         } else {
-                            await setDoc(itemRef, { completedAt: new Date() });
+                            await setDoc(itemRef, { brand: brand, completedAt: new Date() });
                         }
                     };
-
-                    li.appendChild(productLink);
-                    li.appendChild(completeButton);
                     productList.appendChild(li);
                 });
 
-                const searchAllButton = document.createElement('button');
-                searchAllButton.textContent = `Search All ${products.length} Products`;
-                searchAllButton.className = "w-full mt-4 p-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200";
-                searchAllButton.onclick = () => { products.forEach(productName => openSearchTab(brand, productName)); };
-
                 contentWrapper.appendChild(productList);
-                contentWrapper.appendChild(searchAllButton);
                 content.appendChild(contentWrapper);
-                
                 accordionItem.appendChild(button);
                 accordionItem.appendChild(content);
                 brandAccordions.appendChild(accordionItem);
 
                 button.addEventListener('click', () => {
-                    const isActive = content.style.maxHeight;
                     button.querySelector('svg').classList.toggle('rotate-180');
-                    if (isActive) {
+                    if (content.style.maxHeight) {
                         content.style.maxHeight = null;
                     } else {
                         content.style.maxHeight = content.scrollHeight + "px";
@@ -277,33 +284,60 @@
             });
         }
 
-        /**
-         * Listens for real-time DB changes and updates the style of individual items
-         * without redrawing the entire UI.
-         */
-        function listenForUpdates() {
+        function listenForUpdates(productsByBrand) {
             const completedItemsRef = collection(db, DB_COLLECTION_NAME);
             onSnapshot(completedItemsRef, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    const uniqueId = change.doc.id;
+                const completedCountByBrand = {};
+                
+                // First, reset all styles and counts
+                for (const brand in productsByBrand) {
+                    completedCountByBrand[brand] = 0;
+                    productsByBrand[brand].forEach(productName => {
+                        const uniqueId = `${brand}|${productName}`;
+                        const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
+                        const link = document.getElementById(`link-${elementId}`);
+                        const button = document.getElementById(`button-${elementId}`);
+                        if (link && button) {
+                            link.classList.remove('completed');
+                            button.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-gray-200 text-gray-600 border-gray-300';
+                        }
+                    });
+                }
+
+                // Count completed items from the snapshot
+                snapshot.docs.forEach(doc => {
+                    const brand = doc.data().brand;
+                    if (brand && completedCountByBrand.hasOwnProperty(brand)) {
+                        completedCountByBrand[brand]++;
+                    }
+                    // Style the individual completed item
+                    const uniqueId = doc.id;
                     const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
-                    const productLink = document.getElementById(`link-${elementId}`);
-                    const completeButton = document.getElementById(`button-${elementId}`);
-
-                    if (!productLink || !completeButton) return; // Skip if element not found
-
-                    if (change.type === "added") {
-                        // Mark as completed
-                        productLink.classList.add('completed');
-                        completeButton.classList.remove('bg-gray-200', 'text-gray-600', 'border-gray-300');
-                        completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
-                    } else if (change.type === "removed") {
-                        // Mark as not completed
-                        productLink.classList.remove('completed');
-                        completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
-                        completeButton.classList.remove('bg-green-500', 'text-white', 'border-green-500');
+                    const link = document.getElementById(`link-${elementId}`);
+                    const button = document.getElementById(`button-${elementId}`);
+                    if (link && button) {
+                        link.classList.add('completed');
+                        button.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-green-500 text-white border-green-500';
                     }
                 });
+
+                // Update progress bars and counts for all brands
+                for (const brand in productsByBrand) {
+                    const brandId = brand.replace(/[^a-zA-Z0-9]/g, '-');
+                    const total = productsByBrand[brand].length;
+                    const completed = completedCountByBrand[brand];
+                    const percentage = total > 0 ? (completed / total) * 100 : 0;
+
+                    const countEl = document.getElementById(`count-${brandId}`);
+                    const progressEl = document.getElementById(`progress-${brandId}`);
+
+                    if (countEl) {
+                        countEl.textContent = `${completed} / ${total}`;
+                    }
+                    if (progressEl) {
+                        progressEl.style.background = `linear-gradient(to right, #4ade80 ${percentage}%, #e5e7eb ${percentage}%)`; // green-400 to gray-200
+                    }
+                }
             });
         }
     </script>
