@@ -153,10 +153,13 @@
 
         /**
          * Opens a Google Images search tab for a given query.
-         * @param {string} query - The search term.
+         * @param {string} brand - The brand name.
+         * @param {string} productName - The product name.
          */
-        function openSearchTab(query) {
-            const searchQuery = encodeURIComponent(query);
+        function openSearchTab(brand, productName) {
+            // *** CHANGE HERE: Combine brand and product name for the search query ***
+            const fullQuery = `${brand} ${productName}`;
+            const searchQuery = encodeURIComponent(fullQuery);
             const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${searchQuery}`;
             window.open(googleImagesUrl, '_blank');
         }
@@ -205,7 +208,8 @@
                     productLink.className = 'text-blue-600 hover:underline hover:text-blue-800';
                     productLink.onclick = (e) => {
                         e.preventDefault();
-                        openSearchTab(productName);
+                        // *** CHANGE HERE: Pass both the brand and product name ***
+                        openSearchTab(brand, productName);
                     };
                     li.appendChild(productLink);
                     productList.appendChild(li);
@@ -218,7 +222,8 @@
                 searchAllButton.onclick = () => {
                     console.log(`Searching for ${products.length} products from brand: ${brand}`);
                     products.forEach(productName => {
-                        openSearchTab(productName);
+                        // *** CHANGE HERE: Pass both the brand and product name ***
+                        openSearchTab(brand, productName);
                     });
                 };
 
