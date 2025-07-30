@@ -13,20 +13,26 @@
         body {
             font-family: 'Inter', sans-serif;
         }
+        /* Simple transition for the accordion panel */
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
 
-    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-4xl">
 
         <!-- Header Section -->
         <header class="text-center mb-8">
             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Google Sheet Product Image Search</h1>
-            <p class="mt-2 text-lg text-gray-600">Click a brand to instantly search for images of all its products.</p>
+            <p class="mt-2 text-lg text-gray-600">Click a brand to see its products and search for images.</p>
         </header>
 
         <!-- Main Content -->
-        <main class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+        <main class="bg-white p-4 sm:p-6 rounded-xl shadow-md border border-gray-200">
             
             <!-- Loading State -->
             <div id="loading-state" class="text-center py-10">
@@ -40,15 +46,19 @@
                 <p id="error-text" class="mt-2"></p>
             </div>
 
-            <!-- Brand Buttons Container -->
-            <div id="buttons-container" class="hidden">
+            <!-- Accordion Container -->
+            <div id="accordion-container" class="hidden">
                  <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
-                    <p class="text-blue-700 mt-1">Click a brand button below. This will open a new Google Images search tab for <strong class="font-semibold">each product</strong> listed under that brand in your sheet.</p>
-                    <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might try to block the new tabs. If it does, please "Allow pop-ups" for this page for the tool to work correctly.</p>
+                    <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
+                        <li>Click a brand name to expand its product list.</li>
+                        <li>Click an individual product name to open one image search tab.</li>
+                        <li>Click the "Search All" button to open tabs for every product in that list.</li>
+                    </ul>
+                    <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might block multiple tabs. If it does, please "Allow pop-ups" for this page to use the "Search All" feature.</p>
                 </div>
-                <div id="brand-buttons" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    <!-- Buttons will be dynamically inserted here -->
+                <div id="brand-accordions" class="space-y-3">
+                    <!-- Accordions will be dynamically inserted here -->
                 </div>
             </div>
 
@@ -57,15 +67,14 @@
 
     <script>
         // --- CONFIGURATION ---
-        // The URL of your public Google Sheet with the "?output=csv" parameter.
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?output=csv';
         
         // --- DOM ELEMENTS ---
         const loadingState = document.getElementById('loading-state');
         const errorMessage = document.getElementById('error-message');
         const errorText = document.getElementById('error-text');
-        const buttonsContainer = document.getElementById('buttons-container');
-        const brandButtons = document.getElementById('brand-buttons');
+        const accordionContainer = document.getElementById('accordion-container');
+        const brandAccordions = document.getElementById('brand-accordions');
 
         // --- CORE LOGIC ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -73,15 +82,12 @@
         });
 
         /**
-         * A simple CSV parser. Converts CSV text into an array of objects.
-         * @param {string} csvText - The raw CSV string data.
-         * @returns {Array<Object>} An array of objects representing the rows.
+         * A simple CSV parser.
          */
         function parseCSV(csvText) {
-            // Sanitize the input by removing carriage returns which can break line splitting
             const sanitizedText = csvText.replace(/\r/g, "");
             const lines = sanitizedText.trim().split('\n');
-            if (lines.length < 2) return []; // Return empty if no data rows
+            if (lines.length < 2) return [];
 
             const headers = lines[0].split(',').map(header => header.trim());
             const data = [];
@@ -104,41 +110,30 @@
          */
         async function fetchAndProcessData() {
             try {
-                // Step 1: Fetching the data directly. This works when the file is hosted on a web server.
                 const response = await fetch(googleSheetUrl);
-                if (!response.ok) {
-                    throw new Error(`Network response was not ok. Status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`Network response was not ok. Status: ${response.status}`);
+                
                 const csvText = await response.text();
-
-                // Step 2: Parsing the data
                 const parsedData = parseCSV(csvText);
-                if (!parsedData || parsedData.length === 0) {
-                     throw new Error("Failed to parse the CSV file or the file is empty. Please check the sheet format.");
-                }
+                if (!parsedData || parsedData.length === 0) throw new Error("Failed to parse CSV or the file is empty.");
 
-                // Step 3: Grouping products by brand
                 const productsByBrand = groupProducts(parsedData);
                 
-                // Step 4: Creating the buttons
-                createBrandButtons(productsByBrand);
+                createBrandAccordions(productsByBrand);
                 
                 loadingState.classList.add('hidden');
-                buttonsContainer.classList.remove('hidden');
+                accordionContainer.classList.remove('hidden');
 
             } catch (error) {
                 console.error('Error fetching or processing data:', error);
                 loadingState.classList.add('hidden');
-                // Updated error message for a hosted environment
-                errorText.textContent = `Failed to load data from the Google Sheet. Please ensure the link is correct, the sheet is published, and there are no network issues. Details: ${error.message}`;
+                errorText.textContent = `Failed to load data from the Google Sheet. Please ensure the link is correct and the sheet is published. Details: ${error.message}`;
                 errorMessage.classList.remove('hidden');
             }
         }
 
         /**
          * Groups an array of product objects by their 'Brand' property.
-         * @param {Array<Object>} data - The array of product objects from the parser.
-         * @returns {Object} An object with brands as keys and product name arrays as values.
          */
         function groupProducts(data) {
             const grouped = {};
@@ -157,35 +152,94 @@
         }
 
         /**
-         * Creates and appends a button for each brand to the DOM.
+         * Opens a Google Images search tab for a given query.
+         * @param {string} query - The search term.
+         */
+        function openSearchTab(query) {
+            const searchQuery = encodeURIComponent(query);
+            const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${searchQuery}`;
+            window.open(googleImagesUrl, '_blank');
+        }
+
+        /**
+         * Creates and appends an accordion for each brand to the DOM.
          * @param {Object} productsByBrand - The object containing products grouped by brand.
          */
-        function createBrandButtons(productsByBrand) {
+        function createBrandAccordions(productsByBrand) {
             const brands = Object.keys(productsByBrand).sort();
 
             if (brands.length === 0) {
-                 errorText.textContent = "No valid 'Brand' and 'Name' columns found in the sheet, or the sheet is empty.";
+                 errorText.textContent = "No valid 'Brand' and 'Name' columns found, or the sheet is empty.";
                  errorMessage.classList.remove('hidden');
                  return;
             }
 
             brands.forEach(brand => {
+                const products = productsByBrand[brand];
+                const accordionItem = document.createElement('div');
+                accordionItem.className = "border border-gray-200 rounded-lg";
+
+                // Create the button to toggle the accordion
                 const button = document.createElement('button');
-                button.textContent = brand;
-                button.className = "w-full text-left p-3 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-100 hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-200";
+                button.className = "w-full flex justify-between items-center text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200";
+                button.innerHTML = `
+                    <span class="font-semibold text-lg text-gray-800">${brand}</span>
+                    <svg class="w-6 h-6 transform transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                `;
                 
-                button.addEventListener('click', () => {
-                    const products = productsByBrand[brand];
-                    console.log(`Searching for ${products.length} products from brand: ${brand}`);
-                    
-                    products.forEach(productName => {
-                        const searchQuery = encodeURIComponent(productName);
-                        const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${searchQuery}`;
-                        window.open(googleImagesUrl, '_blank');
-                    });
+                // Create the content panel
+                const content = document.createElement('div');
+                content.className = "accordion-content bg-white";
+                
+                const contentWrapper = document.createElement('div');
+                contentWrapper.className = 'p-4 border-t border-gray-200';
+
+                // Create product list
+                const productList = document.createElement('ul');
+                productList.className = 'space-y-2 mb-4';
+                products.forEach(productName => {
+                    const li = document.createElement('li');
+                    const productLink = document.createElement('a');
+                    productLink.href = '#';
+                    productLink.textContent = productName;
+                    productLink.className = 'text-blue-600 hover:underline hover:text-blue-800';
+                    productLink.onclick = (e) => {
+                        e.preventDefault();
+                        openSearchTab(productName);
+                    };
+                    li.appendChild(productLink);
+                    productList.appendChild(li);
                 });
 
-                brandButtons.appendChild(button);
+                // Create "Search All" button
+                const searchAllButton = document.createElement('button');
+                searchAllButton.textContent = `Search All ${products.length} Products`;
+                searchAllButton.className = "w-full mt-4 p-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200";
+                searchAllButton.onclick = () => {
+                    console.log(`Searching for ${products.length} products from brand: ${brand}`);
+                    products.forEach(productName => {
+                        openSearchTab(productName);
+                    });
+                };
+
+                contentWrapper.appendChild(productList);
+                contentWrapper.appendChild(searchAllButton);
+                content.appendChild(contentWrapper);
+                
+                accordionItem.appendChild(button);
+                accordionItem.appendChild(content);
+                brandAccordions.appendChild(accordionItem);
+
+                // Add event listener for the accordion toggle
+                button.addEventListener('click', () => {
+                    const isActive = content.style.maxHeight;
+                    button.querySelector('svg').classList.toggle('rotate-180');
+                    if (isActive) {
+                        content.style.maxHeight = null;
+                    } else {
+                        content.style.maxHeight = content.scrollHeight + "px";
+                    }
+                });
             });
         }
     </script>
