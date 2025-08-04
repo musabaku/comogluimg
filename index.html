@@ -57,14 +57,15 @@
             <!-- Accordion Container -->
             <div id="accordion-container" class="hidden">
                  <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
-                    <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
-                        <li>Click the checkmark (✓) to mark a product as "done". Your progress is saved for everyone in real-time.</li>
-                        <li>The progress bar on each brand shows the completion percentage.</li>
-                        <li>Click an individual product name to open one image search tab.</li>
-                    </ul>
-                    <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might block multiple tabs. If it does, please "Allow pop-ups" for this page.</p>
-                </div>
+                     <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
+                     <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
+                         <li>Click the checkmark (✓) to mark a product as "done". Your progress is saved for everyone in real-time.</li>
+                         <li>The progress bar on each brand shows the completion percentage.</li>
+                         <li>Click an individual product name to open one image search tab.</li>
+                         <li>Click the <strong>"Open All Product Tabs"</strong> button to open all products for a specific brand at once.</li>
+                     </ul>
+                     <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might block multiple tabs. If it does, please "Allow pop-ups" for this page.</p>
+                 </div>
                 <div id="brand-accordions" class="space-y-3">
                     <!-- Accordions will be dynamically inserted here -->
                 </div>
@@ -76,8 +77,9 @@
     <!-- Firebase Libraries -->
     <script type="module">
         // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIGURATION ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?output=csv';
@@ -106,23 +108,33 @@
 
         // --- FIREBASE INITIALIZATION ---
         let db;
+        let auth;
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
+            auth = getAuth(app);
         } catch (e) {
             console.error("Firebase initialization error:", e);
             showError("Could not initialize Firebase. Please ensure your firebaseConfig object is correct.");
         }
         
         // --- CORE LOGIC ---
-        document.addEventListener('DOMContentLoaded', () => {
-            if (db) {
-                fetchAndProcessData();
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (db && auth) {
+                try {
+                    await signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                    fetchAndProcessData();
+                } catch (error) {
+                    console.error("Anonymous sign-in failed:", error);
+                    showError("Could not connect to the database. Please check your connection and Firebase security rules.");
+                }
             }
         });
 
         function showError(message) {
             loadingState.classList.add('hidden');
+            accordionContainer.classList.add('hidden');
             errorText.textContent = message;
             errorMessage.classList.remove('hidden');
         }
@@ -159,20 +171,16 @@
                 
                 const orderedBrands = [];
                 const seenBrands = new Set();
-                console.log("--- Debugging Sheet Data ---");
-                parsedData.forEach((row, index) => {
+                parsedData.forEach((row) => {
                     const brand = row.Brand ? row.Brand.trim() : '';
-                    // *** FIX: Stricter check to filter out invalid brand rows ***
                     if (!brand || brand.toLowerCase() === 'brand') {
-                        console.warn(`Row ${index + 2} has a missing or invalid brand name. SKIPPING. Data:`, row);
-                        return; // Skip this row entirely
+                        return; // Skip invalid rows
                     }
                     if (!seenBrands.has(brand)) {
                         orderedBrands.push(brand);
                         seenBrands.add(brand);
                     }
                 });
-                 console.log("--- End Debugging ---");
 
                 createBrandAccordions(productsByBrand, orderedBrands);
                 listenForUpdates(productsByBrand);
@@ -189,7 +197,6 @@
         function groupProducts(data) {
             const grouped = {};
             data.forEach(row => {
-                // *** FIX: Ensure we don't group items under an invalid brand name ***
                 const brand = row.Brand ? row.Brand.trim() : '';
                 const name = row.Name ? row.Name.trim() : null;
                 if (brand && name && brand.toLowerCase() !== 'brand') {
@@ -197,8 +204,6 @@
                     grouped[brand].push(name);
                 }
             });
-            // Clean up any "Unnamed Brand" that might have slipped through, though the primary filter should prevent it.
-            delete grouped['Unnamed Brand'];
             delete grouped[''];
             return grouped;
         }
@@ -215,13 +220,12 @@
             const brands = orderedBrands;
 
             if (brands.length === 0) {
-                 showError("No valid 'Brand' and 'Name' columns found, or the sheet is empty.");
-                 return;
+                showError("No valid 'Brand' and 'Name' columns found, or the sheet is empty.");
+                return;
             }
 
             brands.forEach(brand => {
                 const products = productsByBrand[brand] || [];
-                // *** FIX: Don't create an accordion if there are no products for a brand ***
                 if (products.length === 0) return;
 
                 const accordionItem = document.createElement('div');
@@ -255,7 +259,7 @@
                     const uniqueId = `${brand}|${productName}`;
                     const elementId = uniqueId.replace(/[^a-zA-Z0-9]/g, '-');
                     const li = document.createElement('li');
-                    li.className = 'flex items-center justify-between';
+                    li.className = 'flex items-center justify-between p-2 rounded-md hover:bg-gray-50';
                     li.innerHTML = `
                         <a href="#" id="link-${elementId}" class="text-blue-600 hover:underline hover:text-blue-800 flex-grow">${productName}</a>
                         <button id="button-${elementId}" class="ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200 bg-gray-200 text-gray-600 border-gray-300">✓</button>
@@ -274,7 +278,19 @@
                     productList.appendChild(li);
                 });
 
+                // --- NEW "OPEN ALL" BUTTON ---
+                const openAllButton = document.createElement('button');
+                openAllButton.textContent = `Open All ${products.length} Product Tabs`;
+                openAllButton.className = 'mt-4 w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200';
+                openAllButton.onclick = () => {
+                    products.forEach(productName => {
+                        openSearchTab(brand, productName);
+                    });
+                };
+                // --- END NEW BUTTON ---
+
                 contentWrapper.appendChild(productList);
+                contentWrapper.appendChild(openAllButton); // Add the new button to the content area
                 content.appendChild(contentWrapper);
                 accordionItem.appendChild(button);
                 accordionItem.appendChild(content);
@@ -296,6 +312,7 @@
             onSnapshot(completedItemsRef, (snapshot) => {
                 const completedCountByBrand = {};
                 
+                // Reset all items to incomplete state first
                 for (const brand in productsByBrand) {
                     completedCountByBrand[brand] = 0;
                     productsByBrand[brand].forEach(productName => {
@@ -310,6 +327,7 @@
                     });
                 }
 
+                // Mark items as complete based on Firestore data
                 snapshot.docs.forEach(doc => {
                     const brand = doc.data().brand;
                     if (brand && completedCountByBrand.hasOwnProperty(brand)) {
@@ -325,6 +343,7 @@
                     }
                 });
 
+                // Update progress bars and counts for each brand
                 for (const brand in productsByBrand) {
                     const brandId = brand.replace(/[^a-zA-Z0-9]/g, '-');
                     const total = productsByBrand[brand].length;
@@ -346,3 +365,8 @@
     </script>
 </body>
 </html>
+```
+
+I've now added the "Open All Product Tabs" button to each brand's section. When you click it, it will attempt to open all the associated product image searches in new tabs. Remember that you may need to allow pop-ups from this page in your browser for it to work correctly.
+
+Let me know if you have any other reques
